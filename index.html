@@ -83,7 +83,6 @@
     map.addLayer(markerGroup);
     let results = [];
     let geocodeCache = {};
-    let currentQuery = '';
 
     const categoryOptions = {
       education: {
@@ -168,8 +167,10 @@
           { key: 'tourism', value: 'zoo' },
           { key: 'tourism', value: 'aquarium' }
         ],
-        'Mosques and Churches': [
-          { key: 'amenity', value: 'place_of_worship', additional: '"religion"="muslim"' },
+        'Mosques': [
+          { key: 'amenity', value: 'place_of_worship', additional: '"religion"="muslim"' }
+        ],
+        'Churches': [
           { key: 'amenity', value: 'place_of_worship', additional: '"religion"="christian"' }
         ]
       },
@@ -258,7 +259,7 @@
     }
 
     function updateTags() {
-      // Tags are now handled dynamically based on category and subcategory selection
+      // Tags are managed dynamically based on category and subcategory selections
     }
 
     async function geocodeCity(city) {
@@ -288,7 +289,6 @@
         queryParts.push(`relation${filter}(around:10000,${lat},${lon});`);
       });
       
-      // Use 'out geom center' to get better coordinate data
       return `[out:json][timeout:60];(${queryParts.join('')});out geom center tags;`;
     }
 
@@ -325,20 +325,16 @@
         const sorted = data.elements.map(el => {
           let elLat, elLon;
           
-          // Prefer entrance coordinates if available, then node coordinates, then center
           if (el.tags && el.tags['entrance']) {
             elLat = el.lat;
             elLon = el.lon;
           } else if (el.lat && el.lon) {
-            // This is a node - use direct coordinates
             elLat = el.lat;
             elLon = el.lon;
           } else if (el.center) {
-            // This is a way/relation - use calculated center
             elLat = el.center.lat;
             elLon = el.center.lon;
           } else if (el.geometry && el.geometry.length > 0) {
-            // For ways, try to get coordinates from geometry
             const firstPoint = el.geometry[0];
             elLat = firstPoint.lat;
             elLon = firstPoint.lon;
@@ -346,9 +342,9 @@
           
           const name = el.tags.name || el.tags.brand || el.tags.operator || 'Unnamed';
           const street = el.tags['addr:street'] || el.tags['addr:housename'] || '';
-          const city = el.tags['addr:city'] || el.tags['addr:town'] || '';
+          const cityAddr = el.tags['addr:city'] || el.tags['addr:town'] || '';
           const postcode = el.tags['addr:postcode'] || '';
-          const address = `${street}, ${city}, ${postcode}`.replace(/^, | , ,|, $/g, '').trim();
+          const address = `${street}, ${cityAddr}, ${postcode}`.replace(/^, | , ,|, $/g, '').trim();
           
           return { name, address, lat: elLat, lon: elLon, tags: el.tags, type: el.type };
         }).filter(item => item.lat && item.lon)
@@ -356,7 +352,7 @@
 
         sorted.forEach(({ name, address, lat, lon, type }) => {
           const gmapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
-          const accuracy = type === 'node' ? '📍' : '🏢'; // Visual indicator of coordinate type
+          const accuracy = type === 'node' ? '📍' : '🏢';
           const marker = L.marker([lat, lon]).bindPopup(`<strong>${name}</strong><br>${address}<br><small>Type: ${type} ${accuracy}</small><br><a href='${gmapsLink}' target='_blank'>Google Maps</a>`);
           markerGroup.addLayer(marker);
           results.push({ name, address, lat, lon, type });
@@ -406,15 +402,6 @@
       a.href = url;
       a.download = `uk_locations_${new Date().toISOString().split('T')[0]}.geojson`;
       a.click();
-    }
-
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return (R * c).toFixed(2);
     }
 
     // Initialize the subcategories on page load
