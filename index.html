@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>UK Location Extractor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    #map { height: 65vh; width: 100%; }
+    #controls { padding: 15px; background: #f4f4f4; }
+    #results { padding: 10px; height: 35vh; overflow-y: scroll; background: #fff; border-top: 1px solid #ccc; }
+    input, select, button { margin-right: 10px; margin-bottom: 5px; padding: 8px; }
+    select { min-width: 150px; }
+    .loading { opacity: 0.6; pointer-events: none; }
+    .control-row { margin-bottom: 10px; }
+    label { display: inline-block; min-width: 80px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <div class="control-row">
+      <label for="city">City:</label>
+      <input type="text" id="city" placeholder="e.g. London" list="city-suggestions" />
+      <datalist id="city-suggestions">
+        <option value="London">
+        <option value="Manchester">
+        <option value="Birmingham">
+        <option value="Glasgow">
+        <option value="Liverpool">
+        <option value="Edinburgh">
+        <option value="Bristol">
+        <option value="Leeds">
+        <option value="Sheffield">
+        <option value="Cardiff">
+      </datalist>
+    </div>
+
+    <div class="control-row">
+      <label for="category">Category:</label>
+      <select id="category" onchange="suggestTags()">
+        <option value="education">Education</option>
+        <option value="shopping">Shopping & Retail</option>
+        <option value="entertainment">Entertainment & Venues</option>
+        <option value="accommodation">Hotels & Accommodation</option>
+        <option value="culture">Culture & Tourism</option>
+        <option value="food">Food & Drink</option>
+        <option value="healthcare">Healthcare</option>
+        <option value="business">Business & Services</option>
+        <option value="welfare">Welfare & Support</option>
+        <option value="shops">Specialist Shops</option>
+      </select>
+    </div>
+
+    <div class="control-row">
+      <label for="subcategory">Type:</label>
+      <select id="subcategory" onchange="updateTags()">
+        <option value="">Select a type...</option>
+      </select>
+    </div>
+
+    <div class="control-row">
+      <button onclick="fetchData()" id="searchBtn">Search</button>
+      <button onclick="downloadCSV()">Download CSV</button>
+      <button onclick="downloadGeoJSON()">Download GeoJSON</button>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="results"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <script>
+    let map = L.map('map').setView([54.5, -3.5], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data &copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let markerGroup = L.markerClusterGroup();
+    map.addLayer(markerGroup);
+    let results = [];
+    let geocodeCache = {};
+    let currentQuery = '';
+
+    const categoryOptions = {
+      education: {
+        'Schools': [
+          { key: 'amenity', value: 'school' },
+          { key: 'amenity', value: 'kindergarten' }
+        ],
+        'Secondary Schools & Sixth Forms': [
+          { key: 'amenity', value: 'school', additional: '"school:type"="secondary"' },
+          { key: 'amenity', value: 'college' }
+        ],
+        'Universities': [
+          { key: 'amenity', value: 'university' }
+        ],
+        'Colleges': [
+          { key: 'amenity', value: 'college' }
+        ],
+        'Libraries': [
+          { key: 'amenity', value: 'library' }
+        ]
+      },
+      shopping: {
+        'Shopping Malls': [
+          { key: 'shop', value: 'mall' },
+          { key: 'amenity', value: 'marketplace' }
+        ],
+        'Business Districts': [
+          { key: 'landuse', value: 'commercial' }
+        ],
+        'Retail Hubs': [
+          { key: 'shop', value: 'supermarket' },
+          { key: 'amenity', value: 'marketplace' }
+        ],
+        'Gift Shops': [
+          { key: 'shop', value: 'gift' },
+          { key: 'shop', value: 'souvenir' }
+        ],
+        'Boots Stores': [
+          { key: 'shop', value: 'chemist', brand: 'Boots' }
+        ]
+      },
+      entertainment: {
+        'Pubs': [
+          { key: 'amenity', value: 'pub' }
+        ],
+        'Bars': [
+          { key: 'amenity', value: 'bar' }
+        ],
+        'Cocktail Bars': [
+          { key: 'amenity', value: 'bar', additional: '"bar"="cocktail"' }
+        ],
+        'Concert Venues': [
+          { key: 'amenity', value: 'music_venue' },
+          { key: 'amenity', value: 'concert_hall' }
+        ],
+        'Arenas': [
+          { key: 'leisure', value: 'stadium' },
+          { key: 'amenity', value: 'events_venue' }
+        ],
+        'Amusement Parks': [
+          { key: 'tourism', value: 'theme_park' },
+          { key: 'leisure', value: 'amusement_arcade' }
+        ]
+      },
+      accommodation: {
+        'Hotels': [
+          { key: 'tourism', value: 'hotel' }
+        ],
+        'Resorts': [
+          { key: 'tourism', value: 'resort' }
+        ],
+        'Student Accommodation': [
+          { key: 'amenity', value: 'student_accommodation' },
+          { key: 'building', value: 'dormitory' }
+        ]
+      },
+      culture: {
+        'Museums': [
+          { key: 'tourism', value: 'museum' }
+        ],
+        'Zoos': [
+          { key: 'tourism', value: 'zoo' },
+          { key: 'tourism', value: 'aquarium' }
+        ]
+      },
+      food: {
+        'Cafes': [
+          { key: 'amenity', value: 'cafe' }
+        ],
+        'Restaurants': [
+          { key: 'amenity', value: 'restaurant' }
+        ],
+        'Bakeries': [
+          { key: 'shop', value: 'bakery' }
+        ]
+      },
+      healthcare: {
+        'Hospitals': [
+          { key: 'amenity', value: 'hospital' }
+        ],
+        'Clinics': [
+          { key: 'amenity', value: 'clinic' },
+          { key: 'amenity', value: 'doctors' }
+        ],
+        'Pharmacies': [
+          { key: 'amenity', value: 'pharmacy' },
+          { key: 'shop', value: 'chemist' }
+        ],
+        'NHS Locations': [
+          { key: 'amenity', value: 'hospital', operator: 'NHS' },
+          { key: 'amenity', value: 'clinic', operator: 'NHS' }
+        ]
+      },
+      business: {
+        'Pharmaceutical Companies': [
+          { key: 'office', value: 'pharmaceutical' },
+          { key: 'industrial', value: 'pharmaceutical' }
+        ],
+        'Contractors/Building Materials': [
+          { key: 'shop', value: 'trade' },
+          { key: 'shop', value: 'hardware' },
+          { key: 'shop', value: 'doityourself' }
+        ],
+        'Tools Shops': [
+          { key: 'shop', value: 'hardware' },
+          { key: 'shop', value: 'trade' }
+        ],
+        'STIHL Stores': [
+          { key: 'shop', value: 'hardware', brand: 'STIHL' },
+          { key: 'shop', value: 'garden_centre', brand: 'STIHL' }
+        ]
+      },
+      welfare: {
+        'Trusts/Human Welfare': [
+          { key: 'amenity', value: 'social_facility' },
+          { key: 'office', value: 'charity' }
+        ],
+        'Animal Welfare': [
+          { key: 'amenity', value: 'animal_shelter' },
+          { key: 'office', value: 'charity', additional: '"charity"="animal_welfare"' }
+        ]
+      },
+      shops: {
+        'Shoe Shops': [
+          { key: 'shop', value: 'shoes' }
+        ],
+        'Smoking Lounges': [
+          { key: 'amenity', value: 'smoking_area' },
+          { key: 'shop', value: 'tobacco' }
+        ]
+      }
+    };
+
+    function suggestTags() {
+      const category = document.getElementById('category').value;
+      const subcategorySelect = document.getElementById('subcategory');
+      
+      subcategorySelect.innerHTML = '<option value="">Select a type...</option>';
+      
+      if (categoryOptions[category]) {
+        Object.keys(categoryOptions[category]).forEach(subcategory => {
+          const option = document.createElement('option');
+          option.value = subcategory;
+          option.textContent = subcategory;
+          subcategorySelect.appendChild(option);
+        });
+      }
+    }
+
+    function updateTags() {
+      // Tags are now handled dynamically based on category and subcategory selection
+    }
+
+    async function geocodeCity(city) {
+      if (geocodeCache[city]) return geocodeCache[city];
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city + ', UK')}`);
+      const data = await res.json();
+      if (data.length > 0) {
+        const coords = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+        geocodeCache[city] = coords;
+        return coords;
+      } else {
+        throw new Error('City not found');
+      }
+    }
+
+    function buildQuery(lat, lon, tagConfigs) {
+      let queryParts = [];
+      
+      tagConfigs.forEach(config => {
+        let filter = `["${config.key}"="${config.value}"]`;
+        if (config.brand) filter += `["brand"="${config.brand}"]`;
+        if (config.operator) filter += `["operator"="${config.operator}"]`;
+        if (config.additional) filter += `[${config.additional}]`;
+        
+        queryParts.push(`node${filter}(around:10000,${lat},${lon});`);
+        queryParts.push(`way${filter}(around:10000,${lat},${lon});`);
+        queryParts.push(`relation${filter}(around:10000,${lat},${lon});`);
+      });
+      
+      // Use 'out geom center' to get better coordinate data
+      return `[out:json][timeout:60];(${queryParts.join('')});out geom center tags;`;
+    }
+
+    async function fetchData() {
+      const city = document.getElementById('city').value.trim();
+      const category = document.getElementById('category').value;
+      const subcategory = document.getElementById('subcategory').value;
+      const searchBtn = document.getElementById('searchBtn');
+
+      if (!city || !subcategory) {
+        return alert('Please enter a city and select a type.');
+      }
+
+      searchBtn.classList.add('loading');
+      searchBtn.textContent = 'Loading...';
+
+      try {
+        const { lat, lon } = await geocodeCity(city);
+        map.setView([lat, lon], 13);
+        if (window.searchCircle) map.removeLayer(window.searchCircle);
+        window.searchCircle = L.circle([lat, lon], { radius: 10000, color: 'blue', fillOpacity: 0.1 }).addTo(map);
+
+        const tagConfigs = categoryOptions[category][subcategory];
+        const query = buildQuery(lat, lon, tagConfigs);
+        const url = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(query);
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        results = [];
+        markerGroup.clearLayers();
+        document.getElementById('results').innerHTML = '';
+
+        const sorted = data.elements.map(el => {
+          let elLat, elLon;
+          
+          // Prefer entrance coordinates if available, then node coordinates, then center
+          if (el.tags && el.tags['entrance']) {
+            elLat = el.lat;
+            elLon = el.lon;
+          } else if (el.lat && el.lon) {
+            // This is a node - use direct coordinates
+            elLat = el.lat;
+            elLon = el.lon;
+          } else if (el.center) {
+            // This is a way/relation - use calculated center
+            elLat = el.center.lat;
+            elLon = el.center.lon;
+          } else if (el.geometry && el.geometry.length > 0) {
+            // For ways, try to get coordinates from geometry
+            const firstPoint = el.geometry[0];
+            elLat = firstPoint.lat;
+            elLon = firstPoint.lon;
+          }
+          
+          const name = el.tags.name || el.tags.brand || el.tags.operator || 'Unnamed';
+          const street = el.tags['addr:street'] || el.tags['addr:housename'] || '';
+          const city = el.tags['addr:city'] || el.tags['addr:town'] || '';
+          const postcode = el.tags['addr:postcode'] || '';
+          const address = `${street}, ${city}, ${postcode}`.replace(/^, | , ,|, $/g, '').trim();
+          
+          return { name, address, lat: elLat, lon: elLon, tags: el.tags, type: el.type };
+        }).filter(item => item.lat && item.lon)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+        sorted.forEach(({ name, address, lat, lon, type }) => {
+          const gmapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+          const accuracy = type === 'node' ? '📍' : '🏢'; // Visual indicator of coordinate type
+          const marker = L.marker([lat, lon]).bindPopup(`<strong>${name}</strong><br>${address}<br><small>Type: ${type} ${accuracy}</small><br><a href='${gmapsLink}' target='_blank'>Google Maps</a>`);
+          markerGroup.addLayer(marker);
+          results.push({ name, address, lat, lon, type });
+          const row = `<div><strong>${name}</strong> ${accuracy}<br>${address}<br><a href='${gmapsLink}' target='_blank'>View</a><br><small>${lat.toFixed(6)}, ${lon.toFixed(6)}</small></div><hr>`;
+          document.getElementById('results').innerHTML += row;
+        });
+
+        if (results.length > 0) {
+          map.fitBounds(markerGroup.getBounds());
+        }
+        document.getElementById('results').insertAdjacentHTML('afterbegin', `<div><strong>${results.length} results found for ${subcategory} in ${city}.</strong></div><hr>`);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      } finally {
+        searchBtn.classList.remove('loading');
+        searchBtn.textContent = 'Search';
+      }
+    }
+
+    function downloadCSV() {
+      if (!results.length) return alert('No data to download.');
+      let csv = 'Name,Address,Latitude,Longitude,Type\n';
+      results.forEach(r => {
+        csv += `"${r.name}","${r.address}",${r.lat},${r.lon},${r.type || 'unknown'}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `uk_locations_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+    }
+
+    function downloadGeoJSON() {
+      if (!results.length) return alert('No data to export.');
+      const geojson = {
+        type: "FeatureCollection",
+        features: results.map(r => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [r.lon, r.lat] },
+          properties: { name: r.name, address: r.address }
+        }))
+      };
+      const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `uk_locations_${new Date().toISOString().split('T')[0]}.geojson`;
+      a.click();
+    }
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return (R * c).toFixed(2);
+    }
+
+    // Initialize the subcategories on page load
+    suggestTags();
+  </script>
+</body>
+</html>
