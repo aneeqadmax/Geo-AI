@@ -1,586 +1,547 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Global Location Extractor with Overpass POST Fallback</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
-/>
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
-/>
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
-/>
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
-  }
-  #map {
-    height: 65vh;
-    width: 100%;
-  }
-  #controls {
-    padding: 15px;
-    background: #f4f4f4;
-  }
-  #results {
-    padding: 10px;
-    height: 35vh;
-    overflow-y: scroll;
-    background: #fff;
-    border-top: 1px solid #ccc;
-  }
-  input,
-  select,
-  button {
-    margin-right: 10px;
-    margin-bottom: 5px;
-    padding: 8px;
-  }
-  select {
-    min-width: 150px;
-  }
-  .loading {
-    opacity: 0.6;
-    pointer-events: none;
-  }
-  .control-row {
-    margin-bottom: 10px;
-  }
-  label {
-    display: inline-block;
-    min-width: 80px;
-    font-weight: bold;
-  }
-</style>
+  <meta charset="utf-8" />
+  <title>Location Extractor — Sleek Map + List</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --muted:#6b7280; --accent:#4f46e5; --success:#10b981;
+      --radius:12px; --shadow: 0 6px 18px rgba(15,23,42,0.06);
+    }
+    *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+    body{margin:0;background:var(--bg);color:#0f172a;}
+    header{padding:18px 24px;background:linear-gradient(90deg, #eef2ff, #ffffff);border-bottom:1px solid rgba(15,23,42,0.04);}
+    .title{font-weight:700;font-size:18px}
+    .subtitle{color:var(--muted);font-size:13px;margin-top:4px}
+    .container{display:grid;grid-template-columns:360px 1fr;gap:18px;padding:18px;max-width:1300px;margin:18px auto;}
+    .panel{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;}
+    .controls .row{margin-bottom:10px;display:flex;gap:8px;align-items:center;}
+    label.small{min-width:80px;color:var(--muted);font-size:13px}
+    input[type=text], select, input[type=number], input[type=search]{
+      flex:1;padding:9px 10px;border:1px solid #e6e9f2;border-radius:8px;background:#fff;
+    }
+    button.primary{
+      background:var(--accent);color:white;border:none;padding:9px 12px;border-radius:10px;cursor:pointer;font-weight:600;
+      box-shadow: 0 6px 14px rgba(79,70,229,0.12);
+    }
+    button.ghost{background:transparent;border:1px solid #e6e9f2;padding:8px 10px;border-radius:10px;cursor:pointer;}
+    #advanced-toggle{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:10px;background:linear-gradient(180deg,#fbfdff,#ffffff);border:1px solid #eef2ff;cursor:pointer}
+    #advanced-content{margin-top:10px;display:none;padding-top:8px;border-top:1px dashed rgba(15,23,42,0.03);}
+    .muted{color:var(--muted);font-size:13px}
+    #map{height:65vh;border-radius:12px;overflow:hidden}
+    .right-col{display:flex;flex-direction:column;gap:12px;}
+    #results{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:10px;height:calc(65vh - 56px);overflow:auto;}
+    table{width:100%;border-collapse:collapse}
+    thead th{font-size:12px;text-align:left;color:var(--muted);padding:8px 6px;border-bottom:1px solid #eef2ff}
+    tbody td{padding:10px 6px;border-bottom:1px solid #f1f5f9;font-size:14px}
+    tbody tr:hover{background:linear-gradient(90deg,#fbfbff,#ffffff);cursor:pointer}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#f1f5ff;color:#3730a3;font-weight:600;font-size:12px}
+    .controls .small-note{font-size:12px;color:var(--muted);margin-top:6px}
+    footer{max-width:1300px;margin:0 auto;padding:12px 18px;color:var(--muted);font-size:13px}
+    @media (max-width:980px){
+      .container{grid-template-columns:1fr; padding:12px;}
+      #map{height:48vh}
+      #results{height:36vh}
+    }
+  </style>
 </head>
 <body>
-<div id="controls">
-  <div class="control-row">
-    <label for="location">Location:</label>
-    <input
-      type="text"
-      id="location"
-      placeholder="e.g. London, England, United Kingdom"
-      list="location-suggestions"
-    />
-    <datalist id="location-suggestions">
-      <option value="London"></option>
-      <option value="Manchester"></option>
-      <option value="Birmingham"></option>
-      <option value="Glasgow"></option>
-      <option value="Liverpool"></option>
-      <option value="Edinburgh"></option>
-      <option value="Bristol"></option>
-      <option value="Leeds"></option>
-      <option value="Sheffield"></option>
-      <option value="Cardiff"></option>
-      <option value="United Kingdom"></option>
-      <option value="England"></option>
-      <option value="Wales"></option>
-      <option value="Scotland"></option>
-      <option value="USA"></option>
-      <option value="Canada"></option>
-      <option value="Germany"></option>
-      <option value="France"></option>
-    </datalist>
+  <header>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1300px;margin:0 auto">
+      <div>
+        <div class="title">Global Location Extractor</div>
+        <div class="subtitle">Overpass POST fallback • smart filter relaxation • polygon splitting • slick UI</div>
+      </div>
+      <div class="muted">Bounds fitting enabled • map + list</div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Left controls -->
+    <div class="panel controls">
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <label class="small" for="location">Location</label>
+        <input id="location" type="text" placeholder="e.g. London, England, United Kingdom" list="location-suggestions" />
+        <datalist id="location-suggestions">
+          <option value="London"></option><option value="Manchester"></option><option value="Birmingham"></option>
+          <option value="Glasgow"></option><option value="Liverpool"></option><option value="Edinburgh"></option>
+        </datalist>
+      </div>
+
+      <div class="row">
+        <label class="small">Category</label>
+        <select id="category" onchange="suggestTags()">
+          <option value="education">Education</option>
+          <option value="shopping">Shopping & Retail</option>
+          <option value="entertainment">Entertainment & Venues</option>
+          <option value="accommodation">Hotels & Accommodation</option>
+          <option value="culture">Culture & Tourism</option>
+          <option value="food">Food & Drink</option>
+          <option value="healthcare">Healthcare</option>
+          <option value="business">Business & Services</option>
+          <option value="welfare">Welfare & Support</option>
+          <option value="shops">Specialist Shops</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label class="small">Type</label>
+        <select id="subcategory"><option value="">Select a type...</option></select>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="primary" id="searchBtn" onclick="fetchData()">Search</button>
+        <button class="ghost" onclick="downloadCSV()">Download CSV</button>
+        <button class="ghost" onclick="downloadGeoJSON()">Download GeoJSON</button>
+      </div>
+
+      <div style="height:10px"></div>
+
+      <div id="advanced-toggle" onclick="toggleAdvanced()">
+        <div style="display:flex;flex-direction:column">
+          <strong style="font-size:14px">Advanced Options</strong>
+          <span class="muted" style="margin-top:4px">Relax filters, keyword, radius, polygon splitting</span>
+        </div>
+        <div class="badge" id="adv-state">ON</div>
+      </div>
+
+      <div id="advanced-content">
+        <div style="display:flex;gap:8px;flex-direction:column;padding-top:8px">
+          <label><input type="checkbox" id="optRelaxFilters" checked> Relax filters if no results</label>
+          <label><input type="checkbox" id="optSplitPolygon" checked> Split large polygons (if area big)</label>
+          <div style="display:flex;gap:8px;">
+            <label class="small" style="min-width:110px">Search radius (km)</label>
+            <input type="number" id="optRadius" value="10" min="1" max="200"/>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <label class="small" style="min-width:110px">Keyword (opt)</label>
+            <input type="text" id="optKeyword" placeholder="e.g. cocktail"/>
+          </div>
+          <div class="small-note">Tip: If you expect brand/operator tags to be sparse in OSM, keep "Relax filters" enabled for broader results.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: map + results -->
+    <div class="right-col">
+      <div id="map" class="panel" style="padding:0"></div>
+      <div id="results" class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <strong id="results-header">No results yet</strong>
+          <div class="muted" id="results-sub">Search to populate results</div>
+        </div>
+        <div style="overflow:auto">
+          <table id="results-table" aria-live="polite">
+            <thead>
+              <tr><th style="width:44%">Name</th><th>Address</th><th style="width:110px">Coords</th></tr>
+            </thead>
+            <tbody id="results-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="control-row">
-    <label for="category">Category:</label>
-    <select id="category" onchange="suggestTags()">
-      <option value="education">Education</option>
-      <option value="shopping">Shopping & Retail</option>
-      <option value="entertainment">Entertainment & Venues</option>
-      <option value="accommodation">Hotels & Accommodation</option>
-      <option value="culture">Culture & Tourism</option>
-      <option value="food">Food & Drink</option>
-      <option value="healthcare">Healthcare</option>
-      <option value="business">Business & Services</option>
-      <option value="welfare">Welfare & Support</option>
-      <option value="shops">Specialist Shops</option>
-    </select>
-  </div>
+  <footer>Built with OpenStreetMap, Nominatim & Overpass • Advanced options available</footer>
 
-  <div class="control-row">
-    <label for="subcategory">Type:</label>
-    <select id="subcategory">
-      <option value="">Select a type...</option>
-    </select>
-  </div>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
-  <div class="control-row">
-    <button onclick="fetchData()" id="searchBtn">Search</button>
-    <button onclick="downloadCSV()">Download CSV</button>
-    <button onclick="downloadGeoJSON()">Download GeoJSON</button>
-  </div>
-</div>
-
-<div id="map"></div>
-<div id="results"></div>
-
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-
-<script>
-  let map = L.map("map").setView([20, 0], 2);
-
-  map.createPane("labels");
-  map.getPane("labels").style.zIndex = 650;
-  map.getPane("labels").style.pointerEvents = "none";
-
-  const osmLayer = L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
-      attribution: "Map data &copy; OpenStreetMap contributors",
-    }
-  );
-
-  const esriImagery = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {
-      attribution: "Imagery &copy; Esri",
-    }
-  );
-
-  const esriLabels = L.tileLayer(
-    "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-    {
-      attribution: "Labels &copy; Esri",
-      pane: "labels",
-      interactive: false,
-    }
-  );
-
+  <script>
+  /**********************
+   *  Helpers & Globals *
+   **********************/
+  let map = L.map('map', {preferCanvas:true}).setView([20,0], 2);
+  map.createPane("labels"); map.getPane("labels").style.zIndex = 650; map.getPane("labels").style.pointerEvents = "none";
+  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'Map data © OpenStreetMap contributors'});
+  const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Imagery © Esri'});
+  const esriLabels = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{pane:'labels',interactive:false});
   const satelliteWithLabels = L.layerGroup([esriImagery, esriLabels]);
+  const baseLayers = { 'OpenStreetMap': osmLayer, 'Satellite (Esri)': satelliteWithLabels };
+  osmLayer.addTo(map); L.control.layers(baseLayers).addTo(map);
 
-  const baseLayers = {
-    OpenStreetMap: osmLayer,
-    "Satellite with Labels (Esri)": satelliteWithLabels,
-  };
+  let markerGroup = L.markerClusterGroup(); map.addLayer(markerGroup);
+  let results = []; let geocodeCache = {}; let elementSeen = new Set();
+  const overpassEndpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.openstreetmap.fr/api/interpreter',
+    'https://overpass.osm.ch/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter'
+  ];
 
-  osmLayer.addTo(map);
-  L.control.layers(baseLayers).addTo(map);
-
-  let markerGroup = L.markerClusterGroup();
-  map.addLayer(markerGroup);
-
-  let results = [];
-  let geocodeCache = {};
-
+  // CategoryOptions (copied from original, kept intact)
   const categoryOptions = {
     education: {
-      Schools: [
-        { key: "amenity", value: "school" },
-        { key: "amenity", value: "kindergarten" },
-      ],
-      "Secondary Schools & Sixth Forms": [
-        { key: "amenity", value: "school", additional: '"school:type"="secondary"' },
-        { key: "amenity", value: "college" },
-      ],
-      Universities: [{ key: "amenity", value: "university" }],
-      Colleges: [{ key: "amenity", value: "college" }],
-      Libraries: [{ key: "amenity", value: "library" }],
+      "Schools": [{ key: "amenity", value: "school" }, { key: "amenity", value: "kindergarten" }],
+      "Secondary Schools & Sixth Forms": [{ key: "amenity", value: "school", additional: '"school:type"="secondary"' }, { key: "amenity", value: "college" }],
+      "Universities": [{ key: "amenity", value: "university" }],
+      "Colleges": [{ key: "amenity", value: "college" }],
+      "Libraries": [{ key: "amenity", value: "library" }]
     },
     shopping: {
-      "Shopping Malls": [
-        { key: "shop", value: "mall" },
-        { key: "amenity", value: "marketplace" },
-      ],
+      "Shopping Malls": [{ key: "shop", value: "mall" }, { key: "amenity", value: "marketplace" }],
       "Business Districts": [{ key: "landuse", value: "commercial" }],
-      "Retail Hubs": [
-        { key: "shop", value: "supermarket" },
-        { key: "amenity", value: "marketplace" },
-      ],
-      "Gift Shops": [
-        { key: "shop", value: "gift" },
-        { key: "shop", value: "souvenir" },
-      ],
-      "Boots Stores": [{ key: "shop", value: "chemist", brand: "Boots" }],
+      "Retail Hubs": [{ key: "shop", value: "supermarket" }, { key: "amenity", value: "marketplace" }],
+      "Gift Shops": [{ key: "shop", value: "gift" }, { key: "shop", value: "souvenir" }],
+      "Boots Stores": [{ key: "shop", value: "chemist", brand: "Boots" }]
     },
     entertainment: {
-      Pubs: [{ key: "amenity", value: "pub" }],
-      Bars: [{ key: "amenity", value: "bar" }],
-      "Cocktail Bars": [
-        { key: "amenity", value: "bar", additional: '"bar"="cocktail"' },
-      ],
-      "Concert Venues": [
-        { key: "amenity", value: "music_venue" },
-        { key: "amenity", value: "concert_hall" },
-      ],
-      Arenas: [
-        { key: "leisure", value: "stadium" },
-        { key: "amenity", value: "events_venue" },
-      ],
-      "Amusement Parks": [
-        { key: "tourism", value: "theme_park" },
-        { key: "leisure", value: "amusement_arcade" },
-      ],
+      "Pubs": [{ key: "amenity", value: "pub" }],
+      "Bars": [{ key: "amenity", value: "bar" }],
+      "Cocktail Bars": [{ key: "amenity", value: "bar", additional: '"bar"="cocktail"' }],
+      "Concert Venues": [{ key: "amenity", value: "music_venue" }, { key: "amenity", value: "concert_hall" }],
+      "Arenas": [{ key: "leisure", value: "stadium" }, { key: "amenity", value: "events_venue" }],
+      "Amusement Parks": [{ key: "tourism", value: "theme_park" }, { key: "leisure", value: "amusement_arcade" }]
     },
     accommodation: {
-      Hotels: [{ key: "tourism", value: "hotel" }],
-      Resorts: [{ key: "tourism", value: "resort" }],
-      "Student Accommodation": [
-        { key: "amenity", value: "student_accommodation" },
-        { key: "building", value: "dormitory" },
-      ],
+      "Hotels": [{ key: "tourism", value: "hotel" }],
+      "Resorts": [{ key: "tourism", value: "resort" }],
+      "Student Accommodation": [{ key: "amenity", value: "student_accommodation" }, { key: "building", value: "dormitory" }]
     },
     culture: {
-      Museums: [{ key: "tourism", value: "museum" }],
-      Zoos: [
-        { key: "tourism", value: "zoo" },
-        { key: "tourism", value: "aquarium" },
-      ],
-      Mosques: [
-        { key: "amenity", value: "place_of_worship", additional: '"religion"="muslim"' },
-      ],
-      Churches: [
-        { key: "amenity", value: "place_of_worship", additional: '"religion"="christian"' },
-      ],
+      "Museums": [{ key: "tourism", value: "museum" }],
+      "Zoos": [{ key: "tourism", value: "zoo" }, { key: "tourism", value: "aquarium" }],
+      "Mosques": [{ key: "amenity", value: "place_of_worship", additional: '"religion"="muslim"' }],
+      "Churches": [{ key: "amenity", value: "place_of_worship", additional: '"religion"="christian"' }]
     },
     food: {
-      Cafes: [{ key: "amenity", value: "cafe" }],
-      Restaurants: [{ key: "amenity", value: "restaurant" }],
-      Bakeries: [{ key: "shop", value: "bakery" }],
+      "Cafes": [{ key: "amenity", value: "cafe" }],
+      "Restaurants": [{ key: "amenity", value: "restaurant" }],
+      "Bakeries": [{ key: "shop", value: "bakery" }]
     },
     healthcare: {
-      Hospitals: [{ key: "amenity", value: "hospital" }],
-      Clinics: [
-        { key: "amenity", value: "clinic" },
-        { key: "amenity", value: "doctors" },
-      ],
-      Pharmacies: [
-        { key: "amenity", value: "pharmacy" },
-        { key: "shop", value: "chemist" },
-      ],
-      "NHS Locations": [
-        { key: "amenity", value: "hospital", operator: "NHS" },
-        { key: "amenity", value: "clinic", operator: "NHS" },
-      ],
+      "Hospitals": [{ key: "amenity", value: "hospital" }],
+      "Clinics": [{ key: "amenity", value: "clinic" }, { key: "amenity", value: "doctors" }],
+      "Pharmacies": [{ key: "amenity", value: "pharmacy" }, { key: "shop", value: "chemist" }],
+      "NHS Locations": [{ key: "amenity", value: "hospital", operator: "NHS" }, { key: "amenity", value: "clinic", operator: "NHS" }]
     },
     business: {
-      "Pharmaceutical Companies": [
-        { key: "office", value: "pharmaceutical" },
-        { key: "industrial", value: "pharmaceutical" },
-      ],
-      "Contractors/Building Materials": [
-        { key: "shop", value: "trade" },
-        { key: "shop", value: "hardware" },
-        { key: "shop", value: "doityourself" },
-      ],
-      "Tools Shops": [
-        { key: "shop", value: "hardware" },
-        { key: "shop", value: "trade" },
-      ],
-      "STIHL Stores": [
-        { key: "shop", value: "hardware", brand: "STIHL" },
-        { key: "shop", value: "garden_centre", brand: "STIHL" },
-      ],
+      "Pharmaceutical Companies": [{ key: "office", value: "pharmaceutical" }, { key: "industrial", value: "pharmaceutical" }],
+      "Contractors/Building Materials": [{ key: "shop", value: "trade" }, { key: "shop", value: "hardware" }, { key: "shop", value: "doityourself" }],
+      "Tools Shops": [{ key: "shop", value: "hardware" }, { key: "shop", value: "trade" }],
+      "STIHL Stores": [{ key: "shop", value: "hardware", brand: "STIHL" }, { key: "shop", value: "garden_centre", brand: "STIHL" }]
     },
     welfare: {
-      "Trusts/Human Welfare": [
-        { key: "amenity", value: "social_facility" },
-        { key: "office", value: "charity" },
-      ],
-      "Animal Welfare": [
-        { key: "amenity", value: "animal_shelter" },
-        { key: "office", value: "charity", additional: '"charity"="animal_welfare"' },
-      ],
+      "Trusts/Human Welfare": [{ key: "amenity", value: "social_facility" }, { key: "office", value: "charity" }],
+      "Animal Welfare": [{ key: "amenity", value: "animal_shelter" }, { key: "office", value: "charity", additional: '"charity"="animal_welfare"' }]
     },
     shops: {
       "Shoe Shops": [{ key: "shop", value: "shoes" }],
-      "Smoking Lounges": [
-        { key: "amenity", value: "smoking_area" },
-        { key: "shop", value: "tobacco" },
-      ],
-    },
+      "Smoking Lounges": [{ key: "amenity", value: "smoking_area" }, { key: "shop", value: "tobacco" }]
+    }
   };
 
-  function suggestTags() {
-    const category = document.getElementById("category").value;
-    const subcategorySelect = document.getElementById("subcategory");
-    subcategorySelect.innerHTML = '<option value="">Select a type...</option>';
-    if (categoryOptions[category]) {
-      Object.keys(categoryOptions[category]).forEach((subcategory) => {
-        const option = document.createElement("option");
-        option.value = subcategory;
-        option.textContent = subcategory;
-        subcategorySelect.appendChild(option);
-      });
-    }
+  function suggestTags(){
+    const cat = document.getElementById('category').value;
+    const sel = document.getElementById('subcategory');
+    sel.innerHTML = '<option value="">Select a type...</option>';
+    if(categoryOptions[cat]) Object.keys(categoryOptions[cat]).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o);});
   }
 
-  // Enhanced geocoding - can handle city/county/country globally
-  async function geocodeLocation(location) {
-    if (geocodeCache[location]) return geocodeCache[location];
-    const url = `https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&q=${encodeURIComponent(
-      location
-    )}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.length > 0) {
-      const best = data[0];
-      const bbox = best.boundingbox ? best.boundingbox.map(Number) : null;
-      const coords = {
-        lat: parseFloat(best.lat),
-        lon: parseFloat(best.lon),
-        bbox,
-        polygon: best.geojson || null,
-        display_name: best.display_name || location,
-      };
-      geocodeCache[location] = coords;
-      return coords;
-    } else {
-      throw new Error("Location not found");
-    }
+  function toggleAdvanced(){
+    const c = document.getElementById('advanced-content');
+    c.style.display = c.style.display === 'block' ? 'none' : 'block';
+    document.getElementById('adv-state').textContent = c.style.display === 'block' ? 'ON' : 'OFF';
   }
 
-  // Overpass API endpoints with fallback order
-  const overpassEndpoints = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.openstreetmap.fr/api/interpreter",
-    "https://overpass.osm.ch/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
-  ];
-
-  // Fetch Overpass data via POST with fallback between endpoints
-  async function fetchWithFallbackPOST(urls, query) {
-    let lastError = null;
-    for (let url of urls) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "data=" + encodeURIComponent(query),
-        });
-        if (!res.ok) {
-          lastError = new Error(`HTTP error ${res.status} at ${url}`);
-          continue; // try next endpoint
-        }
-        const data = await res.json();
-        return data; // success
-      } catch (err) {
-        lastError = err;
-      }
+  // Nominatim geocode with retry shortening query
+  async function geocodeLocation(location){
+    if(geocodeCache[location]) return geocodeCache[location];
+    async function query(q){ const url = `https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&q=${encodeURIComponent(q)}`; const r = await fetch(url,{headers:{'Accept':'application/json'}}); return r.ok?await r.json():[]; }
+    let data = await query(location);
+    if(!data.length && location.includes(',')) {
+      const short = location.split(',')[0].trim();
+      data = await query(short);
     }
-    throw lastError || new Error("All Overpass endpoints failed via POST");
+    if(!data.length) throw new Error('Location not found via Nominatim');
+    const best = data[0];
+    const bbox = best.boundingbox ? best.boundingbox.map(Number) : null;
+    const coords = { lat: parseFloat(best.lat), lon: parseFloat(best.lon), bbox, polygon: best.geojson || null, display_name: best.display_name || location };
+    geocodeCache[location]=coords;
+    return coords;
   }
 
-  // Build Overpass query with polygon or radius search
-  function buildQuery(lat, lon, tagConfigs, polygonGeoJSON) {
-    const queryParts = [];
-
-    function buildFilter(cfg) {
-      let f = `["${cfg.key}"="${cfg.value}"]`;
-      if (cfg.brand) f += `["brand"="${cfg.brand}"]`;
-      if (cfg.operator) f += `["operator"="${cfg.operator}"]`;
-      if (cfg.additional) f += `[${cfg.additional}]`;
-      return f;
-    }
-
-    let geomFilter = "";
-    if (polygonGeoJSON && polygonGeoJSON.type === "Polygon") {
-      const coords = polygonGeoJSON.coordinates[0]
-        .map(([lon, lat]) => `${lat} ${lon}`)
-        .join(" ");
-      geomFilter = `poly:"${coords}"`;
-    } else if (polygonGeoJSON && polygonGeoJSON.type === "MultiPolygon") {
-      const coords = polygonGeoJSON.coordinates
-        .map(
-          (poly) =>
-            poly[0]
-              .map(([lon, lat]) => `${lat} ${lon}`)
-              .join(" ")
-        )
-        .join(" ");
-      geomFilter = `poly:"${coords}"`;
-    } else {
-      geomFilter = `around:10000,${lat},${lon}`; // 10km radius default
-    }
-
-    tagConfigs.forEach((cfg) => {
-      const filter = buildFilter(cfg);
-      queryParts.push(`node${filter}(${geomFilter});`);
-      queryParts.push(`way${filter}(${geomFilter});`);
-      queryParts.push(`relation${filter}(${geomFilter});`);
-    });
-
-    return `[out:json][timeout:120];(${queryParts.join("")});out geom center tags;`;
+  // build Overpass filter text from cfg
+  function buildFilter(cfg){
+    let f = `["${cfg.key}"="${cfg.value}"]`;
+    if(cfg.brand) f += `["brand"="${cfg.brand}"]`;
+    if(cfg.operator) f += `["operator"="${cfg.operator}"]`;
+    if(cfg.additional) f += `[${cfg.additional}]`;
+    return f;
   }
 
-  async function fetchData() {
-    const location = document.getElementById("location").value.trim();
-    const category = document.getElementById("category").value;
-    const subcategory = document.getElementById("subcategory").value;
-    const searchBtn = document.getElementById("searchBtn");
-
-    if (!location || !subcategory) {
-      alert("Please enter a location and select a type.");
-      return;
-    }
-
-    searchBtn.classList.add("loading");
-    searchBtn.textContent = "Loading...";
-
-    try {
-      const locData = await geocodeLocation(location);
-      let { lat, lon, bbox, polygon, display_name } = locData;
-      lat = Number(lat);
-      lon = Number(lon);
-
-      markerGroup.clearLayers();
-      document.getElementById("results").innerHTML = "";
-
-      if (bbox && bbox.length === 4) {
-        // bbox = [south, north, west, east]
-        const southWest = L.latLng(bbox[0], bbox[2]);
-        const northEast = L.latLng(bbox[1], bbox[3]);
-        const bounds = L.latLngBounds(southWest, northEast);
-        map.fitBounds(bounds);
-      } else {
-        map.setView([lat, lon], 10);
-      }
-
-      if (window.locPolygonLayer) {
-        map.removeLayer(window.locPolygonLayer);
-      }
-      if (polygon) {
-        window.locPolygonLayer = L.geoJSON(polygon, {
-          style: { color: "blue", weight: 2, fillOpacity: 0.1 },
-        }).addTo(map);
-      } else {
-        if (window.searchCircle) map.removeLayer(window.searchCircle);
-        window.searchCircle = L.circle([lat, lon], {
-          radius: 10000,
-          color: "blue",
-          fillOpacity: 0.1,
-        }).addTo(map);
-      }
-
-      const tagConfigs = categoryOptions[category][subcategory];
-      if (!tagConfigs) {
-        throw new Error("Invalid category or subcategory selection");
-      }
-
-      const query = buildQuery(lat, lon, tagConfigs, polygon);
-      const data = await fetchWithFallbackPOST(overpassEndpoints, query);
-
-      results = [];
-
-      const sorted = data.elements
-        .map((el) => {
-          let elLat, elLon;
-
-          if (el.tags && el.tags.entrance) {
-            elLat = el.lat;
-            elLon = el.lon;
-          } else if (el.lat && el.lon) {
-            elLat = el.lat;
-            elLon = el.lon;
-          } else if (el.center) {
-            elLat = el.center.lat;
-            elLon = el.center.lon;
-          } else if (el.geometry && el.geometry.length > 0) {
-            const firstPoint = el.geometry[0];
-            elLat = firstPoint.lat;
-            elLon = firstPoint.lon;
-          }
-
-          const name =
-            el.tags.name || el.tags.brand || el.tags.operator || "Unnamed";
-          const street = el.tags["addr:street"] || el.tags["addr:housename"] || "";
-          const cityAddr = el.tags["addr:city"] || el.tags["addr:town"] || "";
-          const postcode = el.tags["addr:postcode"] || "";
-          let address = `${street}, ${cityAddr}, ${postcode}`
-            .replace(/^, | , ,|, $/g, "")
-            .trim();
-
-          return { name, address, lat: elLat, lon: elLon, type: el.type };
-        })
-        .filter((item) => item.lat && item.lon)
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-      sorted.forEach(({ name, address, lat, lon, type }) => {
-        const gmapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
-        const accuracy = type === "node" ? "📍" : "🏢";
-        const marker = L.marker([lat, lon]).bindPopup(
-          `<strong>${name}</strong><br>${address}<br><small>Type: ${type} ${accuracy}</small><br><a href='${gmapsLink}' target='_blank'>Google Maps</a>`
-        );
-        markerGroup.addLayer(marker);
-        results.push({ name, address, lat, lon, type });
-        const row = `<div><strong>${name}</strong> ${accuracy}<br>${address}<br><a href='${gmapsLink}' target='_blank'>View</a><br><small>${lat.toFixed(
-          6
-        )}, ${lon.toFixed(6)}</small></div><hr>`;
-        document.getElementById("results").innerHTML += row;
-      });
-
-      if (results.length > 0) {
-        if (window.locPolygonLayer) {
-          map.fitBounds(window.locPolygonLayer.getBounds());
-        } else {
-          map.fitBounds(markerGroup.getBounds());
-        }
-      } else {
-        alert("No results found.");
-      }
-
-      document.getElementById("results").insertAdjacentHTML(
-        "afterbegin",
-        `<div><strong>${results.length} results found for ${subcategory} in ${display_name}.</strong></div><hr>`
-      );
-    } catch (err) {
-      alert("Error: " + err.message);
-    } finally {
-      searchBtn.classList.remove("loading");
-      searchBtn.textContent = "Search";
-    }
-  }
-
-  function downloadCSV() {
-    if (!results.length) return alert("No data to download.");
-    let csv = "Name,Address,Latitude,Longitude,Type\n";
-    results.forEach((r) => {
-      csv += `"${r.name}","${r.address}",${r.lat},${r.lon},${r.type || "unknown"}\n`;
-    });
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `locations_${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-  }
-
-  function downloadGeoJSON() {
-    if (!results.length) return alert("No data to export.");
-    const geojson = {
-      type: "FeatureCollection",
-      features: results.map((r) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [r.lon, r.lat] },
-        properties: { name: r.name, address: r.address },
-      })),
+  // build query for bbox or poly or around
+  function buildQueryForArea(tagConfigs, areaSpec){
+    // areaSpec: {type:'poly', polyStr } or {type:'bbox', south,west,north,east} or {type:'around', lat,lon,radius_m}
+    const parts = [];
+    const geom = (shape) => {
+      if(shape.type==='poly') return `(${shape.polyStr})`;
+      if(shape.type==='bbox') return `(${shape.south},${shape.west},${shape.north},${shape.east})`;
+      if(shape.type==='around') return `(around:${shape.radius},${shape.lat},${shape.lon})`;
+      return '';
     };
-    const blob = new Blob([JSON.stringify(geojson, null, 2)], {
-      type: "application/json",
+    tagConfigs.forEach(cfg=>{
+      const f = buildFilter(cfg);
+      if(areaSpec.type==='poly'){
+        // use poly:... in place of (around) — Overpass syntax for poly uses node[filter](poly:"..."); etc.
+        parts.push(`node${f}(poly:"${areaSpec.polyStr}");`);
+        parts.push(`way${f}(poly:"${areaSpec.polyStr}");`);
+        parts.push(`relation${f}(poly:"${areaSpec.polyStr}");`);
+      } else if(areaSpec.type==='bbox'){
+        parts.push(`node${f}${geom(areaSpec)};`);
+        parts.push(`way${f}${geom(areaSpec)};`);
+        parts.push(`relation${f}${geom(areaSpec)};`);
+      } else {
+        parts.push(`node${f}${geom(areaSpec)};`);
+        parts.push(`way${f}${geom(areaSpec)};`);
+        parts.push(`relation${f}${geom(areaSpec)};`);
+      }
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `locations_${new Date().toISOString().split("T")[0]}.geojson`;
-    a.click();
+    return `[out:json][timeout:120];(${parts.join('')});out geom center tags;`;
   }
 
-  // Initialize subcategories on page load and category change
+  // POST to Overpass with endpoint failover + small delay
+  async function postOverpass(query){
+    let lastErr = null;
+    for(const url of overpassEndpoints){
+      try{
+        const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'data='+encodeURIComponent(query) });
+        if(!res.ok){ lastErr = new Error('HTTP '+res.status+' @ '+url); await sleep(450); continue; }
+        const data = await res.json();
+        // small defensive: if API returned an empty object or non-elements, treat as empty result
+        if(!data || !Array.isArray(data.elements)) return { elements: [] };
+        return data;
+      }catch(e){ lastErr = e; await sleep(450); continue; }
+    }
+    throw lastErr || new Error('All Overpass endpoints failed');
+  }
+
+  function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  // compute polygon bounding box area-degree approx
+  function bboxSizeDegrees(bbox){ const latSpan = Math.abs(bbox[1]-bbox[0]); const lonSpan = Math.abs(bbox[3]-bbox[2]); return latSpan*lonSpan; }
+
+  // split bbox into grid of roughly N x N depending on span
+  function splitBBox(bbox, maxDegPerTile=1.0){
+    // bbox = [south, north, west, east]
+    const south = bbox[0], north = bbox[1], west = bbox[2], east = bbox[3];
+    const latSpan = north - south, lonSpan = east - west;
+    const latTiles = Math.max(1, Math.ceil(latSpan / maxDegPerTile));
+    const lonTiles = Math.max(1, Math.ceil(lonSpan / maxDegPerTile));
+    const latStep = latSpan / latTiles, lonStep = lonSpan / lonTiles;
+    const tiles = [];
+    for(let i=0;i<latTiles;i++){
+      for(let j=0;j<lonTiles;j++){
+        const s = south + i*latStep;
+        const n = (i===latTiles-1)? north : s + latStep;
+        const w = west + j*lonStep;
+        const e = (j===lonTiles-1)? east : w + lonStep;
+        tiles.push({type:'bbox', south:s, west:w, north:n, east:e});
+      }
+    }
+    return tiles;
+  }
+
+  // run queries for one or many area specs and merge results deduped
+  async function runQueriesForAreaSpecs(tagConfigs, areaSpecs){
+    const merged = []; elementSeen.clear();
+    for(const area of areaSpecs){
+      const q = buildQueryForArea(tagConfigs, area);
+      const data = await postOverpass(q);
+      if(!data || !data.elements) continue;
+      data.elements.forEach(el=>{
+        const idKey = `${el.type}_${el.id}`;
+        if(elementSeen.has(idKey)) return;
+        elementSeen.add(idKey);
+        merged.push(el);
+      });
+    }
+    return merged;
+  }
+
+  // parse OSM element to normalized result
+  function parseElement(el){
+    let lat = el.lat || (el.center && el.center.lat) || (el.geometry && el.geometry[0] && el.geometry[0].lat);
+    let lon = el.lon || (el.center && el.center.lon) || (el.geometry && el.geometry[0] && el.geometry[0].lon);
+    if(!lat || !lon) return null;
+    const tags = el.tags || {};
+    const name = tags.name || tags.brand || tags.operator || 'Unnamed';
+    const street = tags['addr:street'] || tags['addr:housename'] || '';
+    const city = tags['addr:city'] || tags['addr:town'] || tags['addr:suburb'] || tags['addr:hamlet'] || tags['addr:neighbourhood'] || '';
+    const postcode = tags['addr:postcode'] || '';
+    const county = tags['addr:county'] || tags['addr:state'] || '';
+    const address = [street, city, postcode || county].filter(Boolean).join(', ');
+    return { id: `${el.type}_${el.id}`, name, address, lat: Number(lat), lon: Number(lon), type: el.type, tags };
+  }
+
+  /********************
+   *  Main Search Flow *
+   ********************/
+  async function fetchData(){
+    const locationInput = document.getElementById('location').value.trim();
+    const category = document.getElementById('category').value;
+    const subcategory = document.getElementById('subcategory').value;
+    const relaxFilters = document.getElementById('optRelaxFilters').checked;
+    const splitPolygon = document.getElementById('optSplitPolygon').checked;
+    const radiusKm = Number(document.getElementById('optRadius').value) || 10;
+    const keyword = (document.getElementById('optKeyword').value || '').trim().toLowerCase();
+
+    if(!locationInput || !subcategory){ alert('Please enter a location and choose a type'); return; }
+
+    // UI: loading
+    const searchBtn = document.getElementById('searchBtn');
+    searchBtn.disabled=true; searchBtn.textContent='Searching...';
+    document.getElementById('results-header').textContent='Searching...'; document.getElementById('results-sub').textContent='Fetching results, please wait...';
+    markerGroup.clearLayers(); document.getElementById('results-body').innerHTML=''; results=[];
+
+    try{
+      const loc = await geocodeLocation(locationInput);
+      let {lat, lon, bbox, polygon, display_name} = loc;
+      lat = Number(lat); lon = Number(lon);
+
+      // Draw polygon or circle
+      if(window.locPolygonLayer) { map.removeLayer(window.locPolygonLayer); window.locPolygonLayer=null; }
+      if(window.searchCircle) { map.removeLayer(window.searchCircle); window.searchCircle=null; }
+
+      if(polygon && polygon.type){
+        window.locPolygonLayer = L.geoJSON(polygon, { style:{color:'#2563eb', weight:2, fillOpacity:0.06} }).addTo(map);
+      } else {
+        window.searchCircle = L.circle([lat,lon], { radius: radiusKm*1000, color:'#2563eb', fillOpacity:0.06 }).addTo(map);
+      }
+
+      // Determine area specs for Overpass queries
+      let areaSpecs = [];
+      if(polygon && polygon.type){
+        // try polygon poly string
+        const polyStr = (() => {
+          try{
+            // use exterior ring of polygon
+            if(polygon.type==='Polygon') return polygon.coordinates[0].map(c=>`${c[1]} ${c[0]}`).join(' ');
+            if(polygon.type==='MultiPolygon') return polygon.coordinates[0][0].map(c=>`${c[1]} ${c[0]}`).join(' ');
+          }catch(e){ return null; }
+          return null;
+        })();
+        if(polyStr){
+          // check if polygon bbox is large -> may split by bbox tiles instead to avoid huge poly string
+          if(bbox && splitPolygon && bboxSizeDegrees(bbox)>1.5){
+            const tiles = splitBBox(bbox, 1.0); // splits into ~1deg tiles
+            areaSpecs = tiles;
+          } else {
+            areaSpecs = [{ type:'poly', polyStr }];
+          }
+        } else {
+          // fallback to circle
+          areaSpecs = [{ type:'around', lat, lon, radius: radiusKm*1000 }];
+        }
+      } else if(bbox && splitPolygon && bboxSizeDegrees(bbox)>1.5){
+        // large bbox -> split into tiles
+        areaSpecs = splitBBox(bbox, 1.0);
+      } else if(bbox){
+        // use bbox
+        areaSpecs = [{ type:'bbox', south:bbox[0], north:bbox[1], west:bbox[2], east:bbox[3] }];
+      } else {
+        areaSpecs = [{ type:'around', lat, lon, radius: radiusKm*1000 }];
+      }
+
+      // initial tagConfigs
+      let tagConfigs = categoryOptions[category] && categoryOptions[category][subcategory];
+      if(!tagConfigs){ throw new Error('Invalid category / subcategory selected'); }
+
+      // First attempt: run queries with full configs
+      let elements = await runQueriesForAreaSpecs(tagConfigs, areaSpecs);
+
+      // If no results and relaxation enabled: strip brand/operator/additional and retry
+      if(elements.length===0 && relaxFilters){
+        const relaxed = tagConfigs.map(cfg => ({ key:cfg.key, value:cfg.value }));
+        elements = await runQueriesForAreaSpecs(relaxed, areaSpecs);
+      }
+
+      // Parse elements and apply keyword filter & dedupe
+      const parsed = elements.map(parseElement).filter(Boolean);
+      const filtered = keyword ? parsed.filter(p => (p.name || '').toLowerCase().includes(keyword)) : parsed;
+      results = filtered.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+
+      // Show results in UI
+      document.getElementById('results-header').textContent = `${results.length} results for "${subcategory}"`;
+      document.getElementById('results-sub').textContent = `Area: ${display_name}`;
+
+      const tbody = document.getElementById('results-body'); tbody.innerHTML=''; markerGroup.clearLayers(); elementSeen.clear();
+      let bounds = L.latLngBounds();
+
+      results.forEach((r,idx)=>{
+        // marker
+        const marker = L.marker([r.lat,r.lon], {title:r.name}).bindPopup(`<strong>${r.name}</strong><br>${r.address || ''}<br><small>${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}</small>`);
+        markerGroup.addLayer(marker);
+        bounds.extend([r.lat,r.lon]);
+
+        // row
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><strong>${escapeHtml(r.name)}</strong></td><td>${escapeHtml(r.address)}</td><td>${r.lat.toFixed(4)}, ${r.lon.toFixed(4)}</td>`;
+        tr.onclick = ()=>{ map.setView([r.lat,r.lon],14); marker.openPopup(); };
+        tbody.appendChild(tr);
+      });
+
+      // Fit bounds: prefer polygon bounds if available and visible; otherwise marker bounds
+      if(window.locPolygonLayer){
+        try{ map.fitBounds(window.locPolygonLayer.getBounds(), { padding:[40,40] }); }
+        catch(e){ if(results.length) map.fitBounds(bounds, { padding:[40,40] }); else map.setView([lat,lon], 10); }
+      } else if(results.length){
+        map.fitBounds(bounds, { padding:[40,40] });
+      } else {
+        map.setView([lat,lon], 10);
+      }
+
+      if(results.length===0){
+        document.getElementById('results-header').textContent = 'No results found';
+        document.getElementById('results-sub').textContent = 'Try relaxing filters or increasing the radius';
+      }
+
+    }catch(err){
+      console.error(err);
+      alert('Error: '+err.message);
+      document.getElementById('results-header').textContent='Error';
+      document.getElementById('results-sub').textContent=err.message;
+    }finally{
+      searchBtn.disabled=false; searchBtn.textContent='Search';
+    }
+  }
+
+  // CSV & GeoJSON export
+  function downloadCSV(){
+    if(!results.length) return alert('No data to download.');
+    let csv = 'Name,Address,Latitude,Longitude,Type\n';
+    results.forEach(r => csv += `"${r.name.replace(/"/g,'""')}","${(r.address||'').replace(/"/g,'""')}",${r.lat},${r.lon},${r.type}\n`);
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href=url; a.download = `locations_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  }
+  function downloadGeoJSON(){
+    if(!results.length) return alert('No data to export.');
+    const gj = { type:'FeatureCollection', features: results.map(r=>({ type:'Feature', geometry:{type:'Point', coordinates:[r.lon, r.lat]}, properties:{name:r.name, address:r.address} }))};
+    const blob = new Blob([JSON.stringify(gj, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href=url; a.download = `locations_${new Date().toISOString().slice(0,10)}.geojson`; a.click();
+  }
+
+  // small helper
+  function escapeHtml(s){ if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // wire up defaults
   suggestTags();
-  document.getElementById("category").addEventListener("change", suggestTags);
-</script>
+  document.getElementById('category').addEventListener('change', suggestTags);
+  document.getElementById('subcategory').addEventListener('change', ()=>{}); // placeholder
+
+  // enter key in location triggers search
+  document.getElementById('location').addEventListener('keydown', (e)=>{ if(e.key==='Enter') fetchData(); });
+
+  // initial advanced content open
+  document.getElementById('advanced-content').style.display='block';
+  </script>
 </body>
 </html>
