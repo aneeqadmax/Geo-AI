@@ -204,8 +204,10 @@
       "Resorts": [{ key: "tourism", value: "resort" }],
       "Student Accommodation": [{ key: "amenity", value: "student_accommodation" }, { key: "building", value: "dormitory" }]
     },
-    culture: {
+   culture: {
       "Museums": [{ key: "tourism", value: "museum" }],
+      "Art Galleries": [{ key: "tourism", value: "gallery" }, { key: "shop", value: "art" }],
+      "Art Auction Houses": [{ key: "shop", value: "auction", additional: '"auction"="art"' }, { key: "office", value: "auction" }],
       "Zoos": [{ key: "tourism", value: "zoo" }, { key: "tourism", value: "aquarium" }],
       "Mosques": [{ key: "amenity", value: "place_of_worship", additional: '"religion"="muslim"' }],
       "Churches": [{ key: "amenity", value: "place_of_worship", additional: '"religion"="christian"' }]
