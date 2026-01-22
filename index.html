@@ -434,21 +434,10 @@
           if(bbox && splitPolygon && bboxSizeDegrees(bbox)>1.5){
             const tiles = splitBBox(bbox, 1.0); // splits into ~1deg tiles
             areaSpecs = tiles;
-          } else if(polygon && polygon.type){
-  // Use bbox FIRST
-  if(bbox){
-    areaSpecs = [{ 
-      type:'bbox', 
-      south:bbox[0], 
-      north:bbox[1], 
-      west:bbox[2], 
-      east:bbox[3] 
-    }];
-  } else {
-    areaSpecs = [{ type:'around', lat, lon, radius: radiusKm*1000 }];
-  }
-}
- else {
+          } else {
+            areaSpecs = [{ type:'poly', polyStr }];
+          }
+        } else {
           // fallback to circle
           areaSpecs = [{ type:'around', lat, lon, radius: radiusKm*1000 }];
         }
@@ -470,34 +459,14 @@
       let elements = await runQueriesForAreaSpecs(tagConfigs, areaSpecs);
 
       // If no results and relaxation enabled: strip brand/operator/additional and retry
-    let elements = await runQueriesForAreaSpecs(tagConfigs, areaSpecs);
+      if(elements.length===0 && relaxFilters){
+        const relaxed = tagConfigs.map(cfg => ({ key:cfg.key, value:cfg.value }));
+        elements = await runQueriesForAreaSpecs(relaxed, areaSpecs);
+      }
 
-if(relaxFilters){
-  const relaxed = tagConfigs.map(cfg => ({
-    key: cfg.key,
-    value: cfg.value
-  }));
-
-  const relaxedElements = await runQueriesForAreaSpecs(relaxed, areaSpecs);
-
-  // MERGE instead of replace
-  elements = [...elements, ...relaxedElements];
-}
       // Parse elements and apply keyword filter & dedupe
       const parsed = elements.map(parseElement).filter(Boolean);
-parsed.filter(p => {
-  const hay = [
-    p.name,
-    p.address,
-    p.tags?.cuisine,
-    p.tags?.bar,
-    p.tags?.amenity,
-    p.tags?.shop,
-    p.tags?.description
-  ].join(' ').toLowerCase();
-
-  return hay.includes(keyword);
-});
+      const filtered = keyword ? parsed.filter(p => (p.name || '').toLowerCase().includes(keyword)) : parsed;
       results = filtered.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
 
       // Show results in UI
