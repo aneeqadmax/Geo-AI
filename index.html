@@ -192,13 +192,28 @@
       "Boots Stores": [{ key: "shop", value: "chemist", brand: "Boots" }]
     },
 entertainment: {
-      "Pubs": [{ key: "amenity", value: "pub" }],
-      "Bars": [{ key: "amenity", value: "bar" }],
-      "Cocktail Bars": [{ key: "amenity", value: "bar", additional: '"bar"="cocktail"' }],
-      "Concert Venues": [{ key: "amenity", value: "music_venue" }, { key: "amenity", value: "concert_hall" }],
-      "Arenas": [{ key: "leisure", value: "stadium" }, { key: "amenity", value: "events_venue" }],
-      "Amusement Parks": [{ key: "tourism", value: "theme_park" }, { key: "leisure", value: "amusement_arcade" }],
-      "Movie Theaters": [{ key: "amenity", value: "Movie Theater" }]
+  "Pubs": [{ key: "amenity", value: "pub" }],
+  "Bars": [{ key: "amenity", value: "bar" }],
+  "Cocktail Bars": [
+    { key: "amenity", value: "bar" }, 
+    { key: "bar", value: "cocktail" } // "additional" was incorrectly formatted
+  ],
+  "Concert Venues": [
+    { key: "amenity", value: "music_venue" },
+    { key: "amenity", value: "concert_hall" }
+  ],
+  "Arenas": [
+    { key: "leisure", value: "stadium" },
+    { key: "amenity", value: "events_venue" }
+  ],
+  "Amusement Parks": [
+    { key: "tourism", value: "theme_park" },
+    { key: "leisure", value: "amusement_arcade" }
+  ],
+  "Movie Theaters": [
+    { key: "amenity", value: "cinema" } // OSM uses "cinema", not "Movie Theater"
+  ]
+}
     },
     accommodation: {
       "Hotels": [{ key: "tourism", value: "hotel" }],
