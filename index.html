@@ -89,6 +89,7 @@
     <div class="input-group">
       <label>Category</label>
       <select id="category" onchange="suggestTags()">
+        <option value="contractors">Building Contractors (SME)</option>
         <option value="education">Education</option>
         <option value="shopping">Shopping & Retail</option>
         <option value="entertainment">Entertainment & Leisure</option>
@@ -174,6 +175,17 @@ const categoryOptions = {
     "Schools": [{ key: "amenity", value: "school" }, { key: "amenity", value: "kindergarten" }],
     "Universities & Colleges": [{ key: "amenity", value: "university" }, { key: "amenity", value: "college" }],
     "Libraries": [{ key: "amenity", value: "library" }]
+  },
+  
+  contractors: {
+    "General Builders (SME)": [{ key: "craft", value: "builder" }, { key: "craft", value: "construction" }],
+    "Electricians": [{ key: "craft", value: "electrician" }],
+    "Plumbers": [{ key: "craft", value: "plumber" }],
+    "Carpenters & Joiners": [{ key: "craft", value: "carpenter" }, { key: "craft", value: "joiner" }],
+    "Roofers": [{ key: "craft", value: "roofer" }],
+    "HVAC & Heating": [{ key: "craft", value: "hvac" }, { key: "craft", value: "heating" }],
+    "Painting & Decorating": [{ key: "craft", value: "painter" }],
+    "Construction Offices": [{ key: "office", value: "construction" }]
   },
   shopping: {
     "Supermarkets": [{ key: "shop", value: "supermarket" }],
