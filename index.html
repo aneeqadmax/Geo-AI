@@ -225,7 +225,7 @@
     <div class="title">Global Location Extractor</div>
     <div class="subtitle">Extract data from OpenStreetMap via Overpass API</div>
   </div>
-  <div style="font-size:12px;color:var(--muted); font-weight:500;">v2.1 • Stable</div>
+  <div style="font-size:12px;color:var(--muted); font-weight:500;">v2.2 • Optimized</div>
 </header>
 
 <div class="main-layout">
@@ -276,7 +276,7 @@
     <div id="adv-content">
       <label class="check-label">
         <input type="checkbox" id="optSplit" checked> 
-        <span>Smart Area Splitting <div style="font-size:11px;color:var(--muted)">Prevents timeouts on larger cities</div></span>
+        <span>Smart Area Splitting <div style="font-size:11px;color:var(--muted)">Adapts limits on larger cities</div></span>
       </label>
       <label class="check-label">
         <input type="checkbox" id="optRelax" checked> 
@@ -506,7 +506,9 @@ function buildOverpassQueries(geo, tagConfigs, allowSplit) {
 
   if (geo.geojson && (geo.geojson.type === 'Polygon' || geo.geojson.type === 'MultiPolygon')) {
     const bboxSize = Math.abs(geo.bbox[1] - geo.bbox[0]) * Math.abs(geo.bbox[3] - geo.bbox[2]);
-    if (geo.geojson.type === 'MultiPolygon' || (allowSplit && bboxSize > 0.5)) {
+    if (bboxSize > 0.8) {
+      areaType = 'around';
+    } else if (geo.geojson.type === 'MultiPolygon' || (allowSplit && bboxSize > 0.2)) {
       areaType = 'bbox';
       areaVal = `(${geo.bbox[0]},${geo.bbox[2]},${geo.bbox[1]},${geo.bbox[3]})`; 
     } else if (geo.geojson.type === 'Polygon') {
@@ -517,15 +519,13 @@ function buildOverpassQueries(geo, tagConfigs, allowSplit) {
     }
   }
 
-  const head = `[out:json][timeout:90];`;
+  const head = `[out:json][timeout:30][maxsize:1073741824];`;
   const queryBody = tagConfigs.map(t => {
     let f = `["${t.key}"="${t.value}"]`;
     if(t.additional) f += t.additional;
     
     let geoFilter = areaVal;
-    let relGeo = (areaType === 'poly') ? `(${geo.bbox[0]},${geo.bbox[2]},${geo.bbox[1]},${geo.bbox[3]})` : geoFilter;
-
-    return `node${f}${geoFilter};way${f}${geoFilter};relation${f}${relGeo};`;
+    return `node${f}${geoFilter};way${f}${geoFilter};`;
   }).join('');
   
   return [`${head}(${queryBody});out center;`];
@@ -535,7 +535,7 @@ async function fetchOverpass(query) {
   for (let url of overpassEndpoints) {
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 20000);
+      const id = setTimeout(() => controller.abort(), 25000);
       
       const res = await fetch(url, {
         method: 'POST',
